@@ -1,0 +1,10 @@
+
+(defwidget bar []
+  (centerbox :orientation "h"
+    (workspaces)
+    (metric :label "Time" :value {formattime(EWW_TIME, "%a %b %d")} )
+    (right)
+  )
+)
+
+
