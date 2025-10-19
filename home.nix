@@ -24,7 +24,7 @@
     kitty     # A modern terminal emulator
     gedit
     discord
-    rofi-wayland # Application launcher
+    rofi # Application launcher
     lazydocker
   ];
 

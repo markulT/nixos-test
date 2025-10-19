@@ -2,5 +2,5 @@
 {
   networking.firewall.enable = true;
   networking.firewall.allowPing = true;
-  networking.firewall.allowTCPPorts = [ 22 80 443 ];
+  networking.firewall.allowedTCPPorts = [ 22 80 443 ];
 }
