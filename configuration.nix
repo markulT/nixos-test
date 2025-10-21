@@ -5,14 +5,14 @@
 let
   # Fetch home-manager. This is a simple way to get started.
   # For more advanced, reproducible builds, you can use Flakes.
-  home-manager = builtins.fetchTarball "https://github.com/nix-community/home-manager/archive/release-24.05.tar.gz";
+  # home-manager = builtins.fetchTarball "https://github.com/nix-community/home-manager/archive/release-24.05.tar.gz";
 in
 {
   imports = [
     # Include the results of the hardware scan.
     ./hardware-configuration.nix
     # Import home-manager's NixOS module.
-    (import "${home-manager}/nixos")
+    #(import "${home-manager}/nixos")
     ./firewall.nix
   ];
 
