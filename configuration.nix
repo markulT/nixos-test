@@ -9,8 +9,6 @@ let
 in
 {
   imports = [
-    # Include the results of the hardware scan.
-    ./hardware-configuration.nix
     # Import home-manager's NixOS module.
     #(import "${home-manager}/nixos")
     ./firewall.nix
