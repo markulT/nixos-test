@@ -80,9 +80,22 @@ sudo nix flake update
 sudo nixos-rebuild switch --flake .#nixos-vm
 ```
 
+## Recovery Mode
+
+If something goes wrong during installation, reset without rebooting:
+
+```bash
+# Reset everything to start fresh
+sudo ./reset-installation.sh
+
+# Then try again
+sudo ./quick-install.sh
+```
+
 ## Files
 
 - `quick-install.sh` - One-command installer (recommended)
+- `reset-installation.sh` - Reset failed installation (no reboot needed!)
 - `install.sh` - Full-featured installer with more options
 - `INSTALLATION.md` - Detailed installation guide
 - `configuration.nix` - Main system config
