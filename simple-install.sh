@@ -85,6 +85,27 @@ fi
 
 echo
 echo -e "${GREEN}==> Partitioning complete!${NC}"
+
+# Set filesystem labels for device-agnostic configuration
+echo -e "${GREEN}==> Setting filesystem labels...${NC}"
+# Find the actual partition devices (works for vda, sda, nvme, etc.)
+DISK_BASE=$(basename "$DISK")
+if [[ "$DISK" == *"nvme"* ]] || [[ "$DISK" == *"mmcblk"* ]]; then
+    # NVMe and MMC devices use p1, p2 notation
+    BOOT_PART="${DISK}p1"
+    ROOT_PART="${DISK}p2"
+else
+    # Regular disks use 1, 2 notation  
+    BOOT_PART="${DISK}1"
+    ROOT_PART="${DISK}2"
+fi
+
+# Set labels (fatlabel for vfat, e2label for ext4)
+fatlabel "$BOOT_PART" NIXBOOT 2>/dev/null || echo "Note: fatlabel not available, skipping boot label"
+e2label "$ROOT_PART" NIXROOT 2>/dev/null || tune2fs -L NIXROOT "$ROOT_PART" 2>/dev/null || echo "Note: e2label not available, skipping root label"
+
+echo "Labels set: NIXBOOT (boot) and NIXROOT (root)"
+echo
 echo "Mount points:"
 mount | grep /mnt
 
