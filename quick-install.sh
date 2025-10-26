@@ -80,17 +80,24 @@ select_disk() {
     echo
     
     while true; do
-        read -p "Enter your choice: " choice
+        echo -n "Enter your choice: "
+        read choice
+        
+        # Trim whitespace
+        choice=$(echo "$choice" | xargs)
         
         case "$choice" in
             [1-9]*)
-                if [[ "$choice" -ge 1 && "$choice" -le ${#disks[@]} ]]; then
+                # Check if it's a valid number in range
+                local num_re='^[0-9]+$'
+                if [[ "$choice" =~ $num_re ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#disks[@]} ]]; then
                     local selected="${disks[$((choice-1))]}"
-                    log "Selected: $selected"
+                    # Output only the disk path to stdout (captured by caller)
                     echo "$selected"
                     return 0
                 else
-                    warn "Invalid choice. Please enter 1-${#disks[@]}"
+                    warn "Please enter a number between 1 and ${#disks[@]}"
+                    echo
                 fi
                 ;;
             m|M)
@@ -101,12 +108,17 @@ select_disk() {
                 echo
                 read -p "Enter device path (e.g., /dev/vda): " manual_disk
                 
+                # Trim whitespace
+                manual_disk=$(echo "$manual_disk" | xargs)
+                
                 if [[ -b "$manual_disk" ]]; then
-                    log "Selected: $manual_disk"
+                    # Output only the disk path to stdout (captured by caller)
                     echo "$manual_disk"
                     return 0
                 else
-                    error "Device $manual_disk not found or not a block device!"
+                    warn "Device '$manual_disk' not found or not a block device!"
+                    warn "Please try again with a valid device path"
+                    echo
                 fi
                 ;;
             l|L)
@@ -118,8 +130,13 @@ select_disk() {
                 log "Installation cancelled"
                 exit 0
                 ;;
+            "")
+                # Empty input, just prompt again
+                echo
+                ;;
             *)
-                warn "Invalid choice. Please enter 1-${#disks[@]}, m, l, or q"
+                warn "Invalid choice '$choice'. Please enter 1-${#disks[@]}, m, l, or q"
+                echo
                 ;;
         esac
     done
