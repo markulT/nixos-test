@@ -101,7 +101,7 @@ echo -e "${GREEN}==> Step 5/5: Installing NixOS...${NC}"
 echo "This will take several minutes. Please be patient..."
 echo
 
-if ! nixos-install --flake "/mnt/etc/nixos#$HOSTNAME" --no-root-password; then
+if ! nixos-install --no-root-password; then
     echo
     echo -e "${RED}ERROR: NixOS installation failed!${NC}"
     echo "Check the error messages above for details."

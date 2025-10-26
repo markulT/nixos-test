@@ -2,15 +2,9 @@
 
 { config, pkgs, ... }:
 
-let
-  # Fetch home-manager. This is a simple way to get started.
-  # For more advanced, reproducible builds, you can use Flakes.
-  # home-manager = builtins.fetchTarball "https://github.com/nix-community/home-manager/archive/release-24.05.tar.gz";
-in
 {
   imports = [
-    # Import home-manager's NixOS module.
-    #(import "${home-manager}/nixos")
+    ./disko-config.nix
     ./firewall.nix
   ];
 
@@ -111,12 +105,11 @@ in
   # services.virtualbox.guest.enable = true;
 
   # 7. --- HOME MANAGER INTEGRATION ---
-  # This section hooks your home.nix file into the system build.
-  home-manager.useGlobalPkgs = true;
-  home-manager.useUserPackages = true;
-  home-manager.users.alice = import ./home.nix;
-  # Optional: Keep backups of dotfiles managed by home-manager.
-  home-manager.backupFileExtension = "hm-backup";
+  # Home manager is disabled for now - enable it later after first boot if needed
+  # home-manager.useGlobalPkgs = true;
+  # home-manager.useUserPackages = true;
+  # home-manager.users.alice = import ./home.nix;
+  # home-manager.backupFileExtension = "hm-backup";
   services.xserver.videoDrivers = [ "vmware" ];
   hardware.graphics = {
     enable = true;
