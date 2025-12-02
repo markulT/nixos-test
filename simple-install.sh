@@ -77,56 +77,115 @@ echo -e "${GREEN}==> Step 1/5: Enabling nix experimental features...${NC}"
 mkdir -p /root/.config/nix
 echo "experimental-features = nix-command flakes" > /root/.config/nix/nix.conf
 
+# Check available space (for nixos-install, not for partitioning)
+echo -e "${BLUE}Checking available space in installer environment...${NC}"
+AVAILABLE_SPACE=$(df / | tail -1 | awk '{print $4}')
+AVAILABLE_SPACE_MB=$((AVAILABLE_SPACE / 1024))
+echo "Available space: ${AVAILABLE_SPACE_MB}MB"
+
+if [[ $AVAILABLE_SPACE_MB -lt 200 ]]; then
+    echo -e "${YELLOW}WARNING:${NC} Low disk space (${AVAILABLE_SPACE_MB}MB available)"
+    echo "Attempting to clean up Nix store..."
+    
+    # Clean up Nix store if possible
+    if command -v nix-collect-garbage &> /dev/null; then
+        nix-collect-garbage -d 2>/dev/null || true
+    fi
+    
+    # Check again
+    AVAILABLE_SPACE=$(df / | tail -1 | awk '{print $4}')
+    AVAILABLE_SPACE_MB=$((AVAILABLE_SPACE / 1024))
+    echo "Available space after cleanup: ${AVAILABLE_SPACE_MB}MB"
+    
+    if [[ $AVAILABLE_SPACE_MB -lt 150 ]]; then
+        echo -e "${YELLOW}WARNING:${NC} Very low disk space (${AVAILABLE_SPACE_MB}MB available)"
+        echo "Partitioning will proceed (uses standard tools, no downloads needed)"
+        echo "But nixos-install may need more space. Continuing anyway..."
+    fi
+fi
+
 # Update disko-config.nix with selected disk
 echo -e "${GREEN}==> Step 2/5: Updating disko configuration...${NC}"
-sed -i "s|device = \"/dev/[a-zA-Z0-9]*\";|device = \"$DISK\";|g" "$SCRIPT_DIR/disko-config.nix"
+
+# Use a more flexible sed pattern that matches any device path
+# This pattern matches: device = "/dev/..."; where ... can be any characters
+if ! sed -i "s|device = \"/dev/[^\"]*\";|device = \"$DISK\";|g" "$SCRIPT_DIR/disko-config.nix"; then
+    echo -e "${RED}ERROR:${NC} Failed to run sed command"
+    exit 1
+fi
 
 # Verify the replacement worked
 if ! grep -q "device = \"$DISK\";" "$SCRIPT_DIR/disko-config.nix"; then
     echo -e "${RED}ERROR:${NC} Failed to update disko-config.nix with device $DISK"
+    echo "Current content of disko-config.nix (device line):"
+    grep "device = " "$SCRIPT_DIR/disko-config.nix" || echo "  (device line not found)"
     echo "Please check the disko-config.nix file format"
     exit 1
 fi
 
 echo "Updated disko-config.nix to use $DISK"
 
-# Run disko
+# Manual partitioning (no Nix packages needed!)
 echo
-echo -e "${GREEN}==> Step 3/5: Running disko (partitioning and mounting)...${NC}"
-echo "This may take a few minutes..."
+echo -e "${GREEN}==> Step 3/5: Partitioning and formatting disk...${NC}"
+echo "This will create partitions and filesystems directly (no package downloads needed)"
 echo
 
-if ! nix run github:nix-community/disko -- --mode zap_create_mount "$SCRIPT_DIR/disko-config.nix"; then
-    echo
-    echo -e "${RED}ERROR: Disko failed!${NC}"
-    echo "The disk $DISK might be invalid or in use."
-    echo "Try running: lsblk"
-    exit 1
-fi
-
-echo
-echo -e "${GREEN}==> Partitioning complete!${NC}"
-
-# Set filesystem labels for device-agnostic configuration
-echo -e "${GREEN}==> Setting filesystem labels...${NC}"
-# Find the actual partition devices (works for vda, sda, nvme, etc.)
-DISK_BASE=$(basename "$DISK")
+# Determine partition naming (nvme/mmc use p1, p2; others use 1, 2)
 if [[ "$DISK" == *"nvme"* ]] || [[ "$DISK" == *"mmcblk"* ]]; then
-    # NVMe and MMC devices use p1, p2 notation
     BOOT_PART="${DISK}p1"
     ROOT_PART="${DISK}p2"
 else
-    # Regular disks use 1, 2 notation  
     BOOT_PART="${DISK}1"
     ROOT_PART="${DISK}2"
 fi
 
-# Set labels (fatlabel for vfat, e2label for ext4)
-fatlabel "$BOOT_PART" NIXBOOT 2>/dev/null || echo "Note: fatlabel not available, skipping boot label"
-e2label "$ROOT_PART" NIXROOT 2>/dev/null || tune2fs -L NIXROOT "$ROOT_PART" 2>/dev/null || echo "Note: e2label not available, skipping root label"
+# Unmount any existing partitions
+echo -e "${BLUE}Unmounting any existing partitions...${NC}"
+umount "$BOOT_PART" 2>/dev/null || true
+umount "$ROOT_PART" 2>/dev/null || true
+umount /mnt/boot 2>/dev/null || true
+umount /mnt 2>/dev/null || true
 
+# Create partition table and partitions
+echo -e "${BLUE}Creating GPT partition table...${NC}"
+parted -s "$DISK" mklabel gpt
+
+echo -e "${BLUE}Creating boot partition (512M, EFI)...${NC}"
+parted -s "$DISK" mkpart boot fat32 1MiB 513MiB
+parted -s "$DISK" set 1 esp on  # Mark as EFI System Partition
+
+echo -e "${BLUE}Creating root partition (remaining space)...${NC}"
+parted -s "$DISK" mkpart root ext4 513MiB 100%
+
+# Wait for partitions to be available
+sleep 2
+partprobe "$DISK" 2>/dev/null || true
+sleep 1
+
+# Verify partitions exist
+if [[ ! -b "$BOOT_PART" ]] || [[ ! -b "$ROOT_PART" ]]; then
+    echo -e "${RED}ERROR:${NC} Failed to create partitions"
+    echo "Expected partitions: $BOOT_PART and $ROOT_PART"
+    lsblk "$DISK"
+    exit 1
+fi
+
+# Format partitions
+echo -e "${BLUE}Formatting boot partition (vfat)...${NC}"
+mkfs.vfat -F 32 -n NIXBOOT "$BOOT_PART"
+
+echo -e "${BLUE}Formatting root partition (ext4)...${NC}"
+mkfs.ext4 -F -L NIXROOT "$ROOT_PART"
+
+# Create mount points and mount
+echo -e "${BLUE}Mounting filesystems...${NC}"
+mkdir -p /mnt/boot
+mount "$ROOT_PART" /mnt
+mount "$BOOT_PART" /mnt/boot
+
+echo -e "${GREEN}Partitioning and mounting complete!${NC}"
 echo "Labels set: NIXBOOT (boot) and NIXROOT (root)"
-echo
 echo "Mount points:"
 mount | grep /mnt
 
