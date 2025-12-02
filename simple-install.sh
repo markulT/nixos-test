@@ -36,11 +36,24 @@ lsblk -d -o NAME,SIZE,TYPE | grep disk
 echo
 
 # Ask for disk device
-echo -e "${YELLOW}Enter the disk device path (e.g., /dev/vda, /dev/sda):${NC}"
+echo -e "${YELLOW}Enter the disk device path (e.g., /dev/vda, /dev/sda) or just the device name (e.g., vda, sda):${NC}"
 read -p "Device: " DISK
 
 # Trim whitespace
 DISK=$(echo "$DISK" | xargs)
+
+# Normalize disk path: if it doesn't start with /dev/, add it
+if [[ ! "$DISK" =~ ^/dev/ ]]; then
+    DISK="/dev/$DISK"
+fi
+
+# Validate that the device exists
+if [[ ! -b "$DISK" ]]; then
+    echo -e "${RED}ERROR:${NC} Device $DISK does not exist or is not a block device"
+    echo "Available disks:"
+    lsblk -d -o NAME,SIZE,TYPE | grep disk
+    exit 1
+fi
 
 echo
 echo -e "${BLUE}Selected disk:${NC} $DISK"
@@ -67,6 +80,14 @@ echo "experimental-features = nix-command flakes" > /root/.config/nix/nix.conf
 # Update disko-config.nix with selected disk
 echo -e "${GREEN}==> Step 2/5: Updating disko configuration...${NC}"
 sed -i "s|device = \"/dev/[a-zA-Z0-9]*\";|device = \"$DISK\";|g" "$SCRIPT_DIR/disko-config.nix"
+
+# Verify the replacement worked
+if ! grep -q "device = \"$DISK\";" "$SCRIPT_DIR/disko-config.nix"; then
+    echo -e "${RED}ERROR:${NC} Failed to update disko-config.nix with device $DISK"
+    echo "Please check the disko-config.nix file format"
+    exit 1
+fi
+
 echo "Updated disko-config.nix to use $DISK"
 
 # Run disko
