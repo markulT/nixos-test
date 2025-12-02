@@ -92,26 +92,51 @@ main() {
     # Step 5: Wipe partition table
     log "Step 5/6: Wiping partition table..."
     
-    # Method 1: Try sgdisk
+    # First, wipe individual partitions if they exist
+    log "   Wiping individual partitions..."
+    for part in "${disk}"*[0-9] "${disk}"p[0-9]; do
+        if [[ -b "$part" ]]; then
+            log "   Wiping $part..."
+            wipefs -af "$part" 2>/dev/null || true
+            dd if=/dev/zero of="$part" bs=1M count=1 2>/dev/null || true
+        fi
+    done
+    
+    # Method 1: Use sgdisk to completely zap GPT
     if command -v sgdisk &> /dev/null; then
-        log "   Using sgdisk..."
+        log "   Using sgdisk to zap GPT..."
+        sgdisk --zap-all "$disk" 2>/dev/null || true
+        # Also clear MBR if present
+        sgdisk --mbrtogpt "$disk" 2>/dev/null || true
         sgdisk --zap-all "$disk" 2>/dev/null || true
     fi
     
-    # Method 2: Use dd as backup
-    log "   Using dd to zero out partition table area..."
-    dd if=/dev/zero of="$disk" bs=1M count=100 conv=notrunc 2>/dev/null || true
+    # Method 2: Use dd to zero out partition table area (more aggressive)
+    log "   Using dd to zero out partition table area (512MB)..."
+    dd if=/dev/zero of="$disk" bs=1M count=512 conv=notrunc 2>/dev/null || true
     
     # Method 3: Try wipefs if available
     if command -v wipefs &> /dev/null; then
-        log "   Using wipefs..."
+        log "   Using wipefs to remove all signatures..."
         wipefs -af "$disk" 2>/dev/null || true
     fi
     
     # Step 6: Update kernel partition table
     log "Step 6/6: Updating kernel partition table..."
     partprobe "$disk" 2>/dev/null || true
-    sleep 3
+    blockdev --rereadpt "$disk" 2>/dev/null || true
+    sleep 5
+    
+    # Verify partitions are gone
+    log "Verifying reset..."
+    if lsblk "$disk" 2>/dev/null | grep -q "part"; then
+        warn "Partitions still detected! Trying more aggressive approach..."
+        # Nuclear option: zero out entire first 1GB
+        dd if=/dev/zero of="$disk" bs=1M count=1024 conv=notrunc 2>/dev/null || true
+        partprobe "$disk" 2>/dev/null || true
+        blockdev --rereadpt "$disk" 2>/dev/null || true
+        sleep 3
+    fi
     
     echo
     log "╔════════════════════════════════════════════════════════════╗"
