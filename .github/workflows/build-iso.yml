@@ -44,19 +44,68 @@ jobs:
 
       - name: Build ISO
         run: |
-          nix build .#packages.x86_64-linux.iso --out-link result-iso
+          set -e
+          echo "Building ISO with nix build..."
+          nix build .#packages.x86_64-linux.iso --out-link result-iso || {
+            echo "Build failed! Checking for errors..."
+            exit 1
+          }
+          
+          echo "Build completed. Checking result-iso structure:"
+          if [ ! -e result-iso ]; then
+            echo "ERROR: result-iso was not created!"
+            exit 1
+          fi
+          
+          ls -la result-iso
+          if [ -L result-iso ]; then
+            REAL_PATH=$(readlink -f result-iso)
+            echo "result-iso is a symlink pointing to: $REAL_PATH"
+            echo "Contents of target:"
+            ls -la "$REAL_PATH" || echo "Could not list target directory"
+          fi
 
       - name: Find ISO file
         id: find-iso
         run: |
-          ISO_FILE=$(find result-iso -name "*.iso" -type f | head -n 1)
-          if [ -z "$ISO_FILE" ]; then
+          echo "Searching for ISO file..."
+          echo "Current directory: $(pwd)"
+          echo "result-iso type: $(stat -c "%F" result-iso 2>/dev/null || echo "not found")"
+          
+          # Check common locations for the ISO
+          if [ -L result-iso ]; then
+            REAL_PATH=$(readlink -f result-iso)
+            echo "Following symlink to: $REAL_PATH"
+          else
+            REAL_PATH=result-iso
+          fi
+          
+          # Look for ISO in various possible locations
+          ISO_FILE=""
+          
+          # Try direct location first
+          if [ -f "$REAL_PATH/nixos-"*.iso ] 2>/dev/null; then
+            ISO_FILE=$(ls "$REAL_PATH"/nixos-*.iso | head -n 1)
+          # Try iso/ subdirectory (common for installation-cd-minimal)
+          elif [ -f "$REAL_PATH/iso/nixos-"*.iso ] 2>/dev/null; then
+            ISO_FILE=$(ls "$REAL_PATH/iso"/nixos-*.iso | head -n 1)
+          # Try recursive find as fallback
+          else
+            ISO_FILE=$(find "$REAL_PATH" -name "*.iso" -type f | head -n 1)
+          fi
+          
+          if [ -z "$ISO_FILE" ] || [ ! -f "$ISO_FILE" ]; then
             echo "Error: ISO file not found"
+            echo "Searched in: $REAL_PATH"
+            echo "Directory structure:"
+            find "$REAL_PATH" -type f -o -type d | head -20 || ls -la "$REAL_PATH" || echo "Could not list directory"
             exit 1
           fi
-          echo "iso_path=$ISO_FILE" >> $GITHUB_OUTPUT
-          echo "iso_name=$(basename $ISO_FILE)" >> $GITHUB_OUTPUT
+          
           echo "Found ISO: $ISO_FILE"
+          echo "ISO size: $(du -h "$ISO_FILE" | cut -f1)"
+          echo "iso_path=$ISO_FILE" >> $GITHUB_OUTPUT
+          echo "iso_name=$(basename "$ISO_FILE")" >> $GITHUB_OUTPUT
 
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
