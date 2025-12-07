@@ -11,7 +11,6 @@ let
   # Usage: GIT_REPO_URL=git@github.com:user/repo.git nix build .#packages.x86_64-linux.iso
   gitRepoUrl = builtins.getEnv "GIT_REPO_URL";
   hasGitRepo = gitRepoUrl != "";
-  
   # Copy the entire repository source into the ISO
   embeddedConfig = pkgs.runCommand "embedded-nixos-config" {
     src = self;

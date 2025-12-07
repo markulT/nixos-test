@@ -43,16 +43,19 @@ jobs:
           nix_path: nixpkgs=channel:nixos-24.05
 
       - name: Setup SSH Key (if provided)
-        if: ${{ secrets.SSH_PRIVATE_KEY != '' }}
         run: |
-          echo "⚠️  WARNING: Embedding SSH private key in ISO"
-          echo "⚠️  The ISO artifact will contain your private key!"
-          echo "⚠️  Only use this for private repositories or deploy keys with limited access"
-          echo ""
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/iso_key
-          chmod 600 ~/.ssh/iso_key
-          echo "SSH key prepared at ~/.ssh/iso_key"
+          if [ -n "${{ secrets.SSH_PRIVATE_KEY }}" ]; then
+            echo "⚠️  WARNING: Embedding SSH private key in ISO"
+            echo "⚠️  The ISO artifact will contain your private key!"
+            echo "⚠️  Only use this for private repositories or deploy keys with limited access"
+            echo ""
+            mkdir -p ~/.ssh
+            echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/iso_key
+            chmod 600 ~/.ssh/iso_key
+            echo "SSH key prepared at ~/.ssh/iso_key"
+          else
+            echo "No SSH_PRIVATE_KEY secret found, building without SSH key"
+          fi
 
       - name: Build ISO
         env:
