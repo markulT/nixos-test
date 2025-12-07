@@ -13,8 +13,21 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ORIGINAL_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$ORIGINAL_SCRIPT_DIR"
 HOSTNAME="${HOSTNAME:-nixos-vm}"
+
+# Check if the script directory is read-only (e.g., embedded in ISO)
+# If so, copy to a writable location
+if [ ! -w "$SCRIPT_DIR" ] || [ ! -w "$SCRIPT_DIR/disko-config.nix" ] 2>/dev/null; then
+    echo -e "${BLUE}Config directory is read-only, copying to writable location...${NC}"
+    WORK_DIR="/tmp/nixos-config-$$"
+    mkdir -p "$WORK_DIR"
+    cp -r "$SCRIPT_DIR"/* "$WORK_DIR/"
+    chmod -R u+w "$WORK_DIR"
+    SCRIPT_DIR="$WORK_DIR"
+    echo -e "${GREEN}Working from:${NC} $SCRIPT_DIR"
+fi
 
 echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║          NixOS Simple Installation                        ║${NC}"
@@ -107,10 +120,35 @@ fi
 # Update disko-config.nix with selected disk
 echo -e "${GREEN}==> Step 2/5: Updating disko configuration...${NC}"
 
-# Use a more flexible sed pattern that matches any device path
-# This pattern matches: device = "/dev/..."; where ... can be any characters
-if ! sed -i "s|device = \"/dev/[^\"]*\";|device = \"$DISK\";|g" "$SCRIPT_DIR/disko-config.nix"; then
-    echo -e "${RED}ERROR:${NC} Failed to run sed command"
+# Ensure we have an absolute path and the file is writable
+DISKO_CONFIG="$SCRIPT_DIR/disko-config.nix"
+DISKO_CONFIG=$(readlink -f "$DISKO_CONFIG" 2>/dev/null || echo "$DISKO_CONFIG")
+
+# Verify the file exists and is writable
+if [ ! -f "$DISKO_CONFIG" ]; then
+    echo -e "${RED}ERROR:${NC} disko-config.nix not found at $DISKO_CONFIG"
+    exit 1
+fi
+
+if [ ! -w "$DISKO_CONFIG" ]; then
+    echo -e "${RED}ERROR:${NC} disko-config.nix is not writable at $DISKO_CONFIG"
+    echo "This should not happen if the read-only check worked. Please report this issue."
+    exit 1
+fi
+
+# Use a safer method: read file, modify in memory, write back
+# This avoids sed -i creating temp files in read-only locations
+TEMP_FILE=$(mktemp /tmp/disko-config.XXXXXX)
+if ! sed "s|device = \"/dev/[^\"]*\";|device = \"$DISK\";|g" "$DISKO_CONFIG" > "$TEMP_FILE"; then
+    rm -f "$TEMP_FILE"
+    echo -e "${RED}ERROR:${NC} Failed to modify disko-config.nix"
+    exit 1
+fi
+
+# Replace the original file
+if ! mv "$TEMP_FILE" "$DISKO_CONFIG"; then
+    rm -f "$TEMP_FILE"
+    echo -e "${RED}ERROR:${NC} Failed to update disko-config.nix"
     exit 1
 fi
 
