@@ -1,0 +1,79 @@
+name: Build NixOS Installer ISO
+
+on:
+  # Trigger on push to release branch (including rebases/merges)
+  push:
+    branches:
+      - release
+      - release/**
+  # Trigger on pull request merge to release branch
+  pull_request:
+    types: [closed]
+    branches:
+      - release
+      - release/**
+  # Allow manual triggering (with optional branch selection)
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build from (leave empty for current branch)'
+        required: false
+        type: string
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+    # Only run on PR merge, not on PR close
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # For manual dispatch, use the specified branch (or default branch if empty)
+          # For PR merge, checkout the target branch (release) at the merge commit
+          # For push, use the branch that was pushed to
+          ref: ${{ github.event.inputs.branch || (github.event_name == 'pull_request' && github.event.pull_request.base.ref || github.ref) }}
+          # For PR merges, fetch the merge commit
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-24.05
+
+      - name: Build ISO
+        run: |
+          nix build .#packages.x86_64-linux.iso --out-link result-iso
+
+      - name: Find ISO file
+        id: find-iso
+        run: |
+          ISO_FILE=$(find result-iso -name "*.iso" -type f | head -n 1)
+          if [ -z "$ISO_FILE" ]; then
+            echo "Error: ISO file not found"
+            exit 1
+          fi
+          echo "iso_path=$ISO_FILE" >> $GITHUB_OUTPUT
+          echo "iso_name=$(basename $ISO_FILE)" >> $GITHUB_OUTPUT
+          echo "Found ISO: $ISO_FILE"
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nixos-installer-iso
+          path: ${{ steps.find-iso.outputs.iso_path }}
+          retention-days: 30
+
+      - name: Display ISO info
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  ISO Build Complete!"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "  Branch: ${{ github.ref_name }}"
+          echo "  Commit: ${{ github.sha }}"
+          echo "  ISO Name: ${{ steps.find-iso.outputs.iso_name }}"
+          echo "  Download from: Actions → Artifacts → nixos-installer-iso"
+          echo ""
+
