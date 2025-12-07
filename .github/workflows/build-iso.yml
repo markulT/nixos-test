@@ -42,10 +42,41 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-24.05
 
+      - name: Setup SSH Key (if provided)
+        if: ${{ secrets.SSH_PRIVATE_KEY != '' }}
+        run: |
+          echo "⚠️  WARNING: Embedding SSH private key in ISO"
+          echo "⚠️  The ISO artifact will contain your private key!"
+          echo "⚠️  Only use this for private repositories or deploy keys with limited access"
+          echo ""
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/iso_key
+          chmod 600 ~/.ssh/iso_key
+          echo "SSH key prepared at ~/.ssh/iso_key"
+
       - name: Build ISO
+        env:
+          GIT_REPO_URL: ${{ secrets.GIT_REPO_URL }}
         run: |
           set -e
           echo "Building ISO with nix build..."
+          
+          BUILD_ARGS=""
+          if [ -f "$HOME/.ssh/iso_key" ]; then
+            echo "Building with embedded SSH key..."
+            export SSH_KEY_PATH="$HOME/.ssh/iso_key"
+            BUILD_ARGS="SSH_KEY_PATH=\"$HOME/.ssh/iso_key\""
+          else
+            echo "Building without SSH key (config will be embedded but git pull won't work)"
+          fi
+          
+          if [ -n "$GIT_REPO_URL" ]; then
+            echo "Building with embedded git repo URL: $GIT_REPO_URL"
+            export GIT_REPO_URL
+          else
+            echo "No git repo URL provided (use GIT_REPO_URL secret to set default)"
+          fi
+          
           nix build .#packages.x86_64-linux.iso --out-link result-iso || {
             echo "Build failed! Checking for errors..."
             exit 1
