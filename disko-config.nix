@@ -29,7 +29,7 @@
                 mountpoint = "/";
                 mountOptions = [ "defaults" ];
               };
-            };
+            };`
           };
         };
       };

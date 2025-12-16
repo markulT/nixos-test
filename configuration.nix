@@ -20,9 +20,14 @@
   };
 
   # 1. --- BOOTLOADER ---
-  # Using systemd-boot for modern EFI systems. It's simple and effective.
+  # Use systemd-boot for UEFI (recommended for modern systems)
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
+  
+  # For BIOS boot, use GRUB instead:
+  # boot.loader.grub.enable = true;
+  # boot.loader.grub.device = "nodev";
+  # boot.loader.grub.efiSupport = false;
 
   # 2. --- NETWORKING ---
   networking.hostName = "nixos-vm"; # Define your hostname.
@@ -102,8 +107,7 @@
     noto-fonts-cjk-sans
     noto-fonts-emoji
     font-awesome
-    pkgs.nerd-fonts.droid-sans-mono
-    pkgs.nerd-fonts._0xproto
+    nerdfonts
   ];
   nixpkgs.config.allowUnfree = true;
 
@@ -118,10 +122,8 @@
   # home-manager.users.alice = import ./home.nix;
   # home-manager.backupFileExtension = "hm-backup";
   services.xserver.videoDrivers = [ "vmware" ];
-  hardware.graphics = {
-    enable = true;
-    enable32Bit = true;
-  };
+  # Note: hardware.graphics option was removed in NixOS 24.05
+  # 32-bit support is enabled automatically when needed
   # This value determines the NixOS release from which the default
   # settings for stateful data, like file locations and database versions,
   # are taken. It's perfectly fine and recommended to leave this value

@@ -218,8 +218,11 @@ mkfs.ext4 -F -L NIXROOT "$ROOT_PART"
 
 # Create mount points and mount
 echo -e "${BLUE}Mounting filesystems...${NC}"
-mkdir -p /mnt/boot
+# Mount root first
 mount "$ROOT_PART" /mnt
+# Then create boot directory inside the mounted root
+mkdir -p /mnt/boot
+# Finally mount boot partition
 mount "$BOOT_PART" /mnt/boot
 
 echo -e "${GREEN}Partitioning and mounting complete!${NC}"
