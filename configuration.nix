@@ -119,7 +119,8 @@
     noto-fonts-cjk-sans
     noto-fonts-emoji
     font-awesome
-    nerdfonts
+    # Use specific nerdfonts instead of the entire collection (which is huge)
+    (nerdfonts.override { fonts = [ "JetBrainsMono" "FiraCode" "Hack" ]; })
   ];
   nixpkgs.config.allowUnfree = true;
 
