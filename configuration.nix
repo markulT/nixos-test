@@ -7,8 +7,8 @@
     ./firewall.nix
   ];
 
-  # Filesystem configuration (created by disko)
-  # Using labels instead of device paths for flexibility across different disk types
+  # Filesystem configuration
+  # Using filesystem labels (more reliable than device paths)
   fileSystems."/" = {
     device = "/dev/disk/by-label/NIXROOT";
     fsType = "ext4";
@@ -18,6 +18,17 @@
     device = "/dev/disk/by-label/NIXBOOT";
     fsType = "vfat";
   };
+  
+  # Alternative: Use device paths (less reliable, changes with disk order)
+  # For VMs, typically /dev/vda (VirtIO) or /dev/sda (SATA)
+  # fileSystems."/" = {
+  #   device = "/dev/vda2";  # Root partition (change vda to your disk)
+  #   fsType = "ext4";
+  # };
+  # fileSystems."/boot" = {
+  #   device = "/dev/vda1";  # Boot partition (change vda to your disk)
+  #   fsType = "vfat";
+  # };
 
   # 1. --- BOOTLOADER ---
   # Use systemd-boot for UEFI (recommended for modern systems)
