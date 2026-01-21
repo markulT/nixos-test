@@ -2,13 +2,8 @@ name: Build NixOS Installer ISO
 
 on:
   # Trigger on push to release branch (including rebases/merges)
+  # Note: PR merges automatically trigger push events, so no need for pull_request trigger
   push:
-    branches:
-      - release
-      - release/**
-  # Trigger on pull request merge to release branch
-  pull_request:
-    types: [closed]
     branches:
       - release
       - release/**
@@ -23,8 +18,8 @@ on:
 jobs:
   build-iso:
     runs-on: ubuntu-latest
-    # Only run on PR merge, not on PR close
-    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    permissions:
+      contents: write  # Required to create releases and tags
     
     steps:
       - name: Checkout repository
@@ -42,28 +37,201 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-24.05
 
-      - name: Build ISO
+      - name: Setup SSH Key (if provided)
         run: |
-          nix build .#packages.x86_64-linux.iso --out-link result-iso
+          if [ -n "${{ secrets.SSH_PRIVATE_KEY }}" ]; then
+            echo "⚠️  WARNING: Embedding SSH private key in ISO"
+            echo "⚠️  The ISO artifact will contain your private key!"
+            echo "⚠️  Only use this for private repositories or deploy keys with limited access"
+            echo ""
+            mkdir -p ~/.ssh
+            SSH_KEY_FILE="$HOME/.ssh/iso_key"
+            echo "${{ secrets.SSH_PRIVATE_KEY }}" > "$SSH_KEY_FILE"
+            chmod 600 "$SSH_KEY_FILE"
+            
+            # Verify the file was created
+            if [ -f "$SSH_KEY_FILE" ]; then
+              echo "✓ SSH key file created successfully at $SSH_KEY_FILE"
+              echo "File size: $(stat -c%s "$SSH_KEY_FILE" 2>/dev/null || wc -c < "$SSH_KEY_FILE") bytes"
+              echo "File permissions: $(stat -c%a "$SSH_KEY_FILE" 2>/dev/null || ls -l "$SSH_KEY_FILE" | awk '{print $1}')"
+            else
+              echo "✗ ERROR: Failed to create SSH key file at $SSH_KEY_FILE"
+              exit 1
+            fi
+          else
+            echo "No SSH_PRIVATE_KEY secret found, building without SSH key"
+          fi
+
+      - name: Build ISO
+        env:
+          GIT_REPO_URL: ${{ secrets.GIT_REPO_URL }}
+        run: |
+          set -e
+          echo "Building ISO with nix build..."
+          
+          # Debug: Check if SSH key file exists
+          echo "Checking for SSH key..."
+          echo "HOME: $HOME"
+          SSH_KEY_FILE="$HOME/.ssh/iso_key"
+          echo "SSH key path: $SSH_KEY_FILE"
+          ls -la ~/.ssh/ 2>/dev/null || echo "~/.ssh directory does not exist"
+          
+          if [ -f "$SSH_KEY_FILE" ]; then
+            echo "✓ SSH key file found at $SSH_KEY_FILE"
+            echo "File size: $(stat -c%s "$SSH_KEY_FILE" 2>/dev/null || wc -c < "$SSH_KEY_FILE") bytes"
+            # Use absolute path for nix build
+            SSH_KEY_ABS=$(readlink -f "$SSH_KEY_FILE" 2>/dev/null || realpath "$SSH_KEY_FILE" 2>/dev/null || echo "$SSH_KEY_FILE")
+            export SSH_KEY_PATH="$SSH_KEY_ABS"
+            echo "Building with embedded SSH key: $SSH_KEY_PATH"
+            echo "Environment variable SSH_KEY_PATH is set to: $SSH_KEY_PATH"
+          else
+            echo "✗ SSH key file NOT found at $SSH_KEY_FILE"
+            echo "Building without SSH key (config will be embedded but git pull won't work)"
+            unset SSH_KEY_PATH
+          fi
+          
+          if [ -n "$GIT_REPO_URL" ]; then
+            echo "Building with embedded git repo URL: $GIT_REPO_URL"
+            export GIT_REPO_URL
+          else
+            echo "No git repo URL provided (use GIT_REPO_URL secret to set default)"
+          fi
+          
+          # Build with environment variables
+          nix build .#packages.x86_64-linux.iso --out-link result-iso || {
+            echo "Build failed! Checking for errors..."
+            exit 1
+          }
+          
+          echo "Build completed. Checking result-iso structure:"
+          if [ ! -e result-iso ]; then
+            echo "ERROR: result-iso was not created!"
+            exit 1
+          fi
+          
+          ls -la result-iso
+          if [ -L result-iso ]; then
+            REAL_PATH=$(readlink -f result-iso)
+            echo "result-iso is a symlink pointing to: $REAL_PATH"
+            echo "Contents of target:"
+            ls -la "$REAL_PATH" || echo "Could not list target directory"
+          fi
 
       - name: Find ISO file
         id: find-iso
         run: |
-          ISO_FILE=$(find result-iso -name "*.iso" -type f | head -n 1)
-          if [ -z "$ISO_FILE" ]; then
+          echo "Searching for ISO file..."
+          echo "Current directory: $(pwd)"
+          echo "result-iso type: $(stat -c "%F" result-iso 2>/dev/null || echo "not found")"
+          
+          # Check common locations for the ISO
+          if [ -L result-iso ]; then
+            REAL_PATH=$(readlink -f result-iso)
+            echo "Following symlink to: $REAL_PATH"
+          else
+            REAL_PATH=result-iso
+          fi
+          
+          # Look for ISO in various possible locations
+          ISO_FILE=""
+          
+          # Try direct location first
+          if [ -f "$REAL_PATH/nixos-"*.iso ] 2>/dev/null; then
+            ISO_FILE=$(ls "$REAL_PATH"/nixos-*.iso | head -n 1)
+          # Try iso/ subdirectory (common for installation-cd-minimal)
+          elif [ -f "$REAL_PATH/iso/nixos-"*.iso ] 2>/dev/null; then
+            ISO_FILE=$(ls "$REAL_PATH/iso"/nixos-*.iso | head -n 1)
+          # Try recursive find as fallback
+          else
+            ISO_FILE=$(find "$REAL_PATH" -name "*.iso" -type f | head -n 1)
+          fi
+          
+          if [ -z "$ISO_FILE" ] || [ ! -f "$ISO_FILE" ]; then
             echo "Error: ISO file not found"
+            echo "Searched in: $REAL_PATH"
+            echo "Directory structure:"
+            find "$REAL_PATH" -type f -o -type d | head -20 || ls -la "$REAL_PATH" || echo "Could not list directory"
             exit 1
           fi
-          echo "iso_path=$ISO_FILE" >> $GITHUB_OUTPUT
-          echo "iso_name=$(basename $ISO_FILE)" >> $GITHUB_OUTPUT
+          
           echo "Found ISO: $ISO_FILE"
+          echo "ISO size: $(du -h "$ISO_FILE" | cut -f1)"
+          echo "iso_path=$ISO_FILE" >> $GITHUB_OUTPUT
+          echo "iso_name=$(basename "$ISO_FILE")" >> $GITHUB_OUTPUT
 
-      - name: Upload ISO artifact
-        uses: actions/upload-artifact@v4
+      - name: Debug Release Info
+        run: |
+          echo "Debugging release creation..."
+          echo "Tag name: iso-${{ github.ref_name }}"
+          echo "ISO path: ${{ steps.find-iso.outputs.iso_path }}"
+          echo "ISO name: ${{ steps.find-iso.outputs.iso_name }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "GITHUB_TOKEN present: $([ -n "${{ secrets.GITHUB_TOKEN }}" ] && echo "yes" || echo "no")"
+          ls -lh "${{ steps.find-iso.outputs.iso_path }}" || echo "ISO file not found!"
+
+      - name: Update Tag to Current Commit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="iso-${{ github.ref_name }}"
+          echo "Updating tag $TAG_NAME to point to ${{ github.sha }}"
+          
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Delete tag if it exists (both locally and remotely)
+          git tag -d "$TAG_NAME" 2>/dev/null || true
+          git push origin ":refs/tags/$TAG_NAME" 2>/dev/null || true
+          
+          # Create new tag pointing to current commit
+          git tag -a "$TAG_NAME" -m "ISO build for ${{ github.ref_name }} - ${{ github.sha }}"
+          git push origin "$TAG_NAME" --force
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: nixos-installer-iso
-          path: ${{ steps.find-iso.outputs.iso_path }}
-          retention-days: 30
+          tag_name: iso-${{ github.ref_name }}
+          name: NixOS Installer ISO - ${{ github.ref_name }}
+          body: |
+            ## NixOS Custom Installer ISO
+            
+            **Branch:** ${{ github.ref_name }}
+            **Latest Commit:** ${{ github.sha }}
+            **ISO:** ${{ steps.find-iso.outputs.iso_name }}
+            **Build Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+            
+            ### Installation Instructions
+            
+            1. Download the ISO file below
+            2. Boot from the ISO
+            3. Run `sudo auto-partition` or follow manual installation steps
+            
+            ### What's Included
+            
+            - Embedded NixOS configuration
+            - Automated partitioning script
+            - SSH key support (if configured)
+            - Git repository URL (if configured)
+            
+            ### Usage
+            
+            ```bash
+            # Quick install
+            sudo auto-partition
+            
+            # Update config from git (if SSH key is embedded)
+            update-config main
+            ```
+            
+            ---
+            *This release is automatically updated on each build of the ${{ github.ref_name }} branch.*
+          files: ${{ steps.find-iso.outputs.iso_path }}
+          draft: false
+          prerelease: false
+          make_latest: true
+          fail_on_unmatched_files: true
 
       - name: Display ISO info
         run: |
@@ -74,6 +242,8 @@ jobs:
           echo "  Branch: ${{ github.ref_name }}"
           echo "  Commit: ${{ github.sha }}"
           echo "  ISO Name: ${{ steps.find-iso.outputs.iso_name }}"
-          echo "  Download from: Actions → Artifacts → nixos-installer-iso"
+          echo ""
+          echo "  Download from:"
+          echo "    - GitHub Releases: https://github.com/${{ github.repository }}/releases"
           echo ""
 

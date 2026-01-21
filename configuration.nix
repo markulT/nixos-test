@@ -4,11 +4,12 @@
 
 {
   imports = [
+    ./hardware-configuration.nix
     ./firewall.nix
   ];
 
-  # Filesystem configuration (created by disko)
-  # Using labels instead of device paths for flexibility across different disk types
+  # Filesystem configuration
+  # Using filesystem labels (more reliable than device paths)
   fileSystems."/" = {
     device = "/dev/disk/by-label/NIXROOT";
     fsType = "ext4";
@@ -18,11 +19,27 @@
     device = "/dev/disk/by-label/NIXBOOT";
     fsType = "vfat";
   };
+  
+  # Alternative: Use device paths (less reliable, changes with disk order)
+  # For VMs, typically /dev/vda (VirtIO) or /dev/sda (SATA)
+  # fileSystems."/" = {
+  #   device = "/dev/vda2";  # Root partition (change vda to your disk)
+  #   fsType = "ext4";
+  # };
+  # fileSystems."/boot" = {
+  #   device = "/dev/vda1";  # Boot partition (change vda to your disk)
+  #   fsType = "vfat";
+  # };
 
   # 1. --- BOOTLOADER ---
-  # Using systemd-boot for modern EFI systems. It's simple and effective.
+  # Use systemd-boot for UEFI (recommended for modern systems)
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
+  
+  # For BIOS boot, use GRUB instead:
+  # boot.loader.grub.enable = true;
+  # boot.loader.grub.device = "nodev";
+  # boot.loader.grub.efiSupport = false;
 
   # 2. --- NETWORKING ---
   networking.hostName = "nixos-vm"; # Define your hostname.
@@ -102,8 +119,8 @@
     noto-fonts-cjk-sans
     noto-fonts-emoji
     font-awesome
-    pkgs.nerd-fonts.droid-sans-mono
-    pkgs.nerd-fonts._0xproto
+    # Use specific nerdfonts instead of the entire collection (which is huge)
+    (nerdfonts.override { fonts = [ "JetBrainsMono" "FiraCode" "Hack" ]; })
   ];
   nixpkgs.config.allowUnfree = true;
 
@@ -118,10 +135,8 @@
   # home-manager.users.alice = import ./home.nix;
   # home-manager.backupFileExtension = "hm-backup";
   services.xserver.videoDrivers = [ "vmware" ];
-  hardware.graphics = {
-    enable = true;
-    enable32Bit = true;
-  };
+  # Note: hardware.graphics option was removed in NixOS 24.05
+  # 32-bit support is enabled automatically when needed
   # This value determines the NixOS release from which the default
   # settings for stateful data, like file locations and database versions,
   # are taken. It's perfectly fine and recommended to leave this value
