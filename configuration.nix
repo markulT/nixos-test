@@ -48,6 +48,10 @@
   # Configure a basic firewall, allowing SSH access.
   networking.firewall.enable = true;
   networking.firewall.allowedTCPPorts = [ 22 ]; # For SSH
+  
+  # Enable SSH server
+  services.openssh.enable = true;
+  services.openssh.settings.PermitRootLogin = "no";
 
   # 3. --- LOCALISATION ---
   time.timeZone = "Europe/Kyiv";
@@ -62,7 +66,12 @@
     extraGroups = [ "wheel" "docker" "video"];
     # Set the default shell for this user.
     shell = pkgs.fish;
+    # Initial password (CHANGE THIS after first login with 'passwd')
+    initialPassword = "nixos";
   };
+  
+  # Allow users to change their passwords after initial setup
+  users.mutableUsers = true;
 
   # 5. --- SOFTWARE & SYSTEM CONFIGURATION ---
 
