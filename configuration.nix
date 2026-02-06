@@ -4,20 +4,11 @@
 
 {
   imports = [
+    ./disko-config.nix
     ./firewall.nix
   ];
 
-  # Filesystem configuration (created by disko)
-  # Using labels instead of device paths for flexibility across different disk types
-  fileSystems."/" = {
-    device = "/dev/disk/by-label/NIXROOT";
-    fsType = "ext4";
-  };
-
-  fileSystems."/boot" = {
-    device = "/dev/disk/by-label/NIXBOOT";
-    fsType = "vfat";
-  };
+  # Filesystem configuration is handled by disko-config.nix
 
   # 1. --- BOOTLOADER ---
   # Using systemd-boot for modern EFI systems. It's simple and effective.

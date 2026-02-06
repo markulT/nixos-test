@@ -18,6 +18,7 @@
                 format = "vfat";
                 mountpoint = "/boot";
                 mountOptions = [ "defaults" ];
+                label = "NIXBOOT";
               };
             };
             root = {
@@ -28,6 +29,7 @@
                 format = "ext4";
                 mountpoint = "/";
                 mountOptions = [ "defaults" ];
+                label = "NIXROOT";
               };
             };
           };
