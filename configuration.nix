@@ -100,7 +100,9 @@
 
   # Enable Docker daemon for containerization.
   virtualisation.docker.enable = true;
-  virtualisation.vmware.guest.enable = true;
+  # VirtualBox guest additions for better VM integration
+  virtualisation.virtualbox.guest.enable = true;
+  virtualisation.virtualbox.guest.x11 = false;  # We're using Wayland, not X11
 
   # Enable sound with Pipewire (the modern standard).
   services.pipewire = {
@@ -143,7 +145,14 @@
   # home-manager.useUserPackages = true;
   # home-manager.users.alice = import ./home.nix;
   # home-manager.backupFileExtension = "hm-backup";
-  services.xserver.videoDrivers = [ "vmware" ];
+  
+  # Graphics configuration for Wayland/Hyprland
+  # Note: services.xserver.videoDrivers is for X11, not Wayland
+  # For Wayland in VMs, we rely on DRM/KMS and mesa drivers
+  # VMware guest tools already provide the necessary graphics support
+  hardware.opengl.enable = true;
+  hardware.opengl.driSupport = true;
+  
   # Note: hardware.graphics option was removed in NixOS 24.05
   # 32-bit support is enabled automatically when needed
   # This value determines the NixOS release from which the default
