@@ -34,7 +34,9 @@
   # 1. --- BOOTLOADER ---
   # Use systemd-boot for UEFI (recommended for modern systems)
   boot.loader.systemd-boot.enable = true;
+  boot.loader.systemd-boot.configurationLimit = 3; # Only keep the last 3 versions
   boot.loader.efi.canTouchEfiVariables = true;
+  boot.initrd.kernelModules = [ "virtio_gpu" ];
   
   # For BIOS boot, use GRUB instead:
   # boot.loader.grub.enable = true;
@@ -100,9 +102,9 @@
 
   # Enable Docker daemon for containerization.
   virtualisation.docker.enable = true;
-  # VirtualBox guest additions for better VM integration
+  # VirtualBox guest additions
   virtualisation.virtualbox.guest.enable = true;
-  virtualisation.virtualbox.guest.x11 = false;  # We're using Wayland, not X11
+  # services.xserver.videoDrivers = [ "virtualbox" ]; # Disabled: buggy with Wayland
 
   # Enable sound with Pipewire (the modern standard).
   services.pipewire = {
@@ -147,14 +149,18 @@
   # home-manager.backupFileExtension = "hm-backup";
   
   # Graphics configuration for Wayland/Hyprland
-  # Note: services.xserver.videoDrivers is for X11, not Wayland
-  # For Wayland in VMs, we rely on DRM/KMS and mesa drivers
-  # VMware guest tools already provide the necessary graphics support
-  hardware.opengl.enable = true;
-  hardware.opengl.driSupport = true;
+  hardware.opengl = {
+    enable = true;
+    driSupport = true;
+    driSupport32Bit = true;
+  };
   
-  # Note: hardware.graphics option was removed in NixOS 24.05
-  # 32-bit support is enabled automatically when needed
+  # Environment variables for Hyprland in VirtualBox
+  environment.sessionVariables = {
+    WLR_NO_HARDWARE_CURSORS = "1"; # Fix cursor trails
+    WLR_RENDERER = "gles2";        # GLES2 is simpler and more stable in VMs than GLES3
+  };
+  
   # This value determines the NixOS release from which the default
   # settings for stateful data, like file locations and database versions,
   # are taken. It's perfectly fine and recommended to leave this value
