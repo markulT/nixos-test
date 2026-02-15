@@ -6,6 +6,9 @@
   imports = [
     ./hardware-configuration.nix
     ./firewall.nix
+    # Choose your bootloader (comment/uncomment one):
+    ./bootloader-bios.nix   # For VirtualBox/KVM on Linux hosts (Legacy BIOS)
+    # ./bootloader-efi.nix  # For Windows/macOS hosts or modern UEFI systems
   ];
 
   # Filesystem configuration
@@ -31,17 +34,9 @@
   #   fsType = "vfat";
   # };
 
-  # 1. --- BOOTLOADER ---
-  # Use systemd-boot for UEFI (recommended for modern systems)
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.systemd-boot.configurationLimit = 3; # Only keep the last 3 versions
-  boot.loader.efi.canTouchEfiVariables = true;
+  # 1. --- KERNEL MODULES & BOOT ---
+  # Load virtio_gpu early for better VM graphics support
   boot.initrd.kernelModules = [ "virtio_gpu" ];
-  
-  # For BIOS boot, use GRUB instead:
-  # boot.loader.grub.enable = true;
-  # boot.loader.grub.device = "nodev";
-  # boot.loader.grub.efiSupport = false;
 
   # 2. --- NETWORKING ---
   networking.hostName = "nixos-vm"; # Define your hostname.
