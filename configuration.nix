@@ -155,10 +155,23 @@
     driSupport32Bit = true;
   };
   
-  # Environment variables for Hyprland in VirtualBox
+  # Environment variables for Hyprland in VirtualBox on NVIDIA host
+  # NVIDIA's OpenGL passthrough has limited feature support
   environment.sessionVariables = {
-    WLR_NO_HARDWARE_CURSORS = "1"; # Fix cursor trails
-    WLR_RENDERER = "gles2";        # GLES2 is simpler and more stable in VMs than GLES3
+    # Cursor fixes for VMs
+    WLR_NO_HARDWARE_CURSORS = "1";          # Fix cursor trails
+    
+    # Force basic OpenGL 2.1 (what VBox actually passes through reliably)
+    WLR_RENDERER = "gles2";                 # Use GLES2 renderer
+    LIBGL_ALWAYS_SOFTWARE = "true";         # Force software fallback for apps
+    
+    # Mesa driver hints for VirtualBox
+    MESA_GL_VERSION_OVERRIDE = "3.3";       # Claim GL 3.3 support
+    MESA_GLSL_VERSION_OVERRIDE = "330";     # Match GLSL version
+    
+    # Disable problematic features
+    WLR_DRM_NO_ATOMIC = "1";                # Disable atomic modesetting
+    __GLX_VENDOR_LIBRARY_NAME = "mesa";     # Use Mesa instead of NVIDIA in guest
   };
   
   # This value determines the NixOS release from which the default
