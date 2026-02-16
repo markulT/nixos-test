@@ -235,6 +235,15 @@ echo
 echo -e "${GREEN}==> Step 4/5: Copying configuration to /mnt/etc/nixos...${NC}"
 mkdir -p /mnt/etc/nixos
 cp -r "$SCRIPT_DIR"/* /mnt/etc/nixos/
+
+# Update GRUB device in bootloader-bios.nix if it exists and is being used
+if [ -f "/mnt/etc/nixos/bootloader-bios.nix" ]; then
+    if grep -q "^[^#]*./bootloader-bios.nix" /mnt/etc/nixos/configuration.nix; then
+        echo -e "${BLUE}Updating GRUB device to $DISK in bootloader-bios.nix...${NC}"
+        sed -i "s|boot.loader.grub.device = \".*\";|boot.loader.grub.device = \"$DISK\";|g" /mnt/etc/nixos/bootloader-bios.nix
+    fi
+fi
+
 echo "Configuration copied successfully."
 
 # Install NixOS
