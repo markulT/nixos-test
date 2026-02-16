@@ -185,16 +185,41 @@ umount "$ROOT_PART" 2>/dev/null || true
 umount /mnt/boot 2>/dev/null || true
 umount /mnt 2>/dev/null || true
 
-# Create partition table and partitions
-echo -e "${BLUE}Creating GPT partition table...${NC}"
-parted -s "$DISK" mklabel gpt
+# Detect bootloader type from configuration
+echo -e "${BLUE}Detecting bootloader configuration...${NC}"
+if grep -q "^[^#]*./bootloader-bios.nix" "$SCRIPT_DIR/configuration.nix"; then
+    BOOTLOADER_TYPE="bios"
+    echo "Using Legacy BIOS bootloader (MBR partition table)"
+elif grep -q "^[^#]*./bootloader-efi.nix" "$SCRIPT_DIR/configuration.nix"; then
+    BOOTLOADER_TYPE="efi"
+    echo "Using UEFI bootloader (GPT partition table)"
+else
+    echo -e "${YELLOW}WARNING:${NC} Could not detect bootloader type, defaulting to EFI"
+    BOOTLOADER_TYPE="efi"
+fi
 
-echo -e "${BLUE}Creating boot partition (512M, EFI)...${NC}"
-parted -s "$DISK" mkpart boot fat32 1MiB 513MiB
-parted -s "$DISK" set 1 esp on  # Mark as EFI System Partition
-
-echo -e "${BLUE}Creating root partition (remaining space)...${NC}"
-parted -s "$DISK" mkpart root ext4 513MiB 100%
+# Create partition table based on bootloader type
+if [[ "$BOOTLOADER_TYPE" == "bios" ]]; then
+    echo -e "${BLUE}Creating MBR (DOS) partition table for BIOS...${NC}"
+    parted -s "$DISK" mklabel msdos
+    
+    echo -e "${BLUE}Creating boot partition (512M)...${NC}"
+    parted -s "$DISK" mkpart primary fat32 1MiB 513MiB
+    parted -s "$DISK" set 1 boot on
+    
+    echo -e "${BLUE}Creating root partition (remaining space)...${NC}"
+    parted -s "$DISK" mkpart primary ext4 513MiB 100%
+else
+    echo -e "${BLUE}Creating GPT partition table for EFI...${NC}"
+    parted -s "$DISK" mklabel gpt
+    
+    echo -e "${BLUE}Creating boot partition (512M, EFI)...${NC}"
+    parted -s "$DISK" mkpart boot fat32 1MiB 513MiB
+    parted -s "$DISK" set 1 esp on  # Mark as EFI System Partition
+    
+    echo -e "${BLUE}Creating root partition (remaining space)...${NC}"
+    parted -s "$DISK" mkpart root ext4 513MiB 100%
+fi
 
 # Wait for partitions to be available
 sleep 2
