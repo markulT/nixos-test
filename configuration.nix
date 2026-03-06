@@ -7,8 +7,8 @@
     ./hardware-configuration.nix
     ./firewall.nix
     # Choose your bootloader (comment/uncomment one):
-    ./bootloader-bios.nix   # For VirtualBox/KVM on Linux hosts (Legacy BIOS)
-    # ./bootloader-efi.nix  # For Windows/macOS hosts or modern UEFI systems
+    # ./bootloader-bios.nix   # For Legacy BIOS systems
+    ./bootloader-efi.nix      # For modern UEFI systems (laptops, desktops)
   ];
 
   # Filesystem configuration
@@ -22,30 +22,17 @@
     device = "/dev/disk/by-label/NIXBOOT";
     fsType = "vfat";
   };
-  
-  # Alternative: Use device paths (less reliable, changes with disk order)
-  # For VMs, typically /dev/vda (VirtIO) or /dev/sda (SATA)
-  # fileSystems."/" = {
-  #   device = "/dev/vda2";  # Root partition (change vda to your disk)
-  #   fsType = "ext4";
-  # };
-  # fileSystems."/boot" = {
-  #   device = "/dev/vda1";  # Boot partition (change vda to your disk)
-  #   fsType = "vfat";
-  # };
 
   # 1. --- KERNEL MODULES & BOOT ---
-  # Load virtio_gpu early for better VM graphics support
-  boot.initrd.kernelModules = [ "virtio_gpu" ];
+  # i915 is autoloaded by the kernel for Intel iGPU — no manual override needed
+  boot.initrd.kernelModules = [ "i915" ]; # Load Intel GPU driver early (better boot splash)
 
   # 2. --- NETWORKING ---
-  networking.hostName = "nixos-vm"; # Define your hostname.
-  # Use NetworkManager. It's the easiest and most common for desktops/laptops.
+  networking.hostName = "nixos-laptop";
   networking.networkmanager.enable = true;
-  # Configure a basic firewall, allowing SSH access.
   networking.firewall.enable = true;
-  networking.firewall.allowedTCPPorts = [ 22 ]; # For SSH
-  
+  networking.firewall.allowedTCPPorts = [ 22 ];
+
   # Enable SSH server
   services.openssh.enable = true;
   services.openssh.settings.PermitRootLogin = "no";
@@ -55,51 +42,43 @@
   i18n.defaultLocale = "en_US.UTF-8";
 
   # 4. --- USER ACCOUNTS ---
-  # Define a non-root user account.
   users.users.alice = {
     isNormalUser = true;
-    # Add user to the 'wheel' group to grant sudo permissions.
-    # 'docker' group is needed to use docker without sudo.
-    extraGroups = [ "wheel" "docker" "video"];
-    # Set the default shell for this user.
+    extraGroups = [ "wheel" "docker" "video" "input" ];
     shell = pkgs.fish;
-    # Initial password (CHANGE THIS after first login with 'passwd')
     initialPassword = "nixos";
   };
-  
-  # Allow users to change their passwords after initial setup
+
   users.mutableUsers = true;
 
   # 5. --- SOFTWARE & SYSTEM CONFIGURATION ---
 
-  # Enable Nix command and flakes support.
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
-  # System-wide packages available to all users.
-  # Keep this list minimal. User-specific apps go in home.nix.
   environment.systemPackages = with pkgs; [
     alacritty
     vim
     git
     wget
-    btop      # A modern resource monitor
+    btop
     openssl
     greetd.gtkgreet
     greetd.tuigreet
     kitty
+    # Intel GPU tools (useful for checking GPU status)
+    intel-gpu-tools
   ];
+
   environment.etc."greetd/environments" = {
     text = ''
       Hyprland
     '';
   };
+
   security.polkit.enable = true;
 
   # Enable Docker daemon for containerization.
   virtualisation.docker.enable = true;
-  # VirtualBox guest additions
-  virtualisation.virtualbox.guest.enable = true;
-  # services.xserver.videoDrivers = [ "virtualbox" ]; # Disabled: buggy with Wayland
 
   # Enable sound with Pipewire (the modern standard).
   services.pipewire = {
@@ -117,61 +96,44 @@
     };
   };
 
-  # Enable Hyprland (Wayland compositor). We are NOT enabling X11/Xserver.
+  # Enable Hyprland (Wayland compositor).
   programs.hyprland.enable = true;
   programs.hyprland.xwayland.enable = true;
   programs.fish.enable = true;
-  # Install system-wide fonts.
+
   fonts.packages = with pkgs; [
     noto-fonts
     noto-fonts-cjk-sans
     noto-fonts-emoji
     font-awesome
-    # Use specific nerdfonts instead of the entire collection (which is huge)
     (nerdfonts.override { fonts = [ "JetBrainsMono" "FiraCode" "Hack" ]; })
   ];
+
   nixpkgs.config.allowUnfree = true;
 
-  # 6. --- VIRTUALIZATION ---
-  # Enable VirtualBox guest additions for better VM integration.
-  # services.virtualbox.guest.enable = true;
-
-  # 7. --- HOME MANAGER INTEGRATION ---
-  # Home manager is disabled for now - enable it later after first boot if needed
-  # home-manager.useGlobalPkgs = true;
-  # home-manager.useUserPackages = true;
-  # home-manager.users.alice = import ./home.nix;
-  # home-manager.backupFileExtension = "hm-backup";
-  
-  # Graphics configuration for Wayland/Hyprland
+  # 6. --- GRAPHICS (Intel Iris Xe / Iris Plus) ---
+  # The i915 open-source driver handles all Intel integrated graphics.
+  # No proprietary drivers needed.
   hardware.opengl = {
     enable = true;
     driSupport = true;
     driSupport32Bit = true;
+    extraPackages = with pkgs; [
+      intel-media-driver   # iHD driver — VA-API hardware video decode (8th gen+)
+      vulkan-intel         # Intel Vulkan support
+      libvdpau-va-gl       # VDPAU via VA-API (for apps that use VDPAU)
+    ];
   };
-  
-  # Environment variables for Hyprland in VirtualBox on NVIDIA host
-  # NVIDIA's OpenGL passthrough has limited feature support
+
+  # No VM-specific environment variables needed on real hardware.
+  # Hyprland works natively with Intel iGPU on Wayland.
   environment.sessionVariables = {
-    # Cursor fixes for VMs
-    WLR_NO_HARDWARE_CURSORS = "1";          # Fix cursor trails
-    
-    # Force basic OpenGL 2.1 (what VBox actually passes through reliably)
-    WLR_RENDERER = "gles2";                 # Use GLES2 renderer
-    LIBGL_ALWAYS_SOFTWARE = "true";         # Force software fallback for apps
-    
-    # Mesa driver hints for VirtualBox
-    MESA_GL_VERSION_OVERRIDE = "3.3";       # Claim GL 3.3 support
-    MESA_GLSL_VERSION_OVERRIDE = "330";     # Match GLSL version
-    
-    # Disable problematic features
-    WLR_DRM_NO_ATOMIC = "1";                # Disable atomic modesetting
-    __GLX_VENDOR_LIBRARY_NAME = "mesa";     # Use Mesa instead of NVIDIA in guest
+    # Tell apps to use VA-API for hardware video decoding
+    LIBVA_DRIVER_NAME = "iHD";
   };
-  
+
   # This value determines the NixOS release from which the default
-  # settings for stateful data, like file locations and database versions,
-  # are taken. It's perfectly fine and recommended to leave this value
-  # set to the version you installed with.
-  system.stateVersion = "24.05"; # Use the version you are installing.
+  # settings for stateful data, like file locations and database versions
+  # are taken.
+  system.stateVersion = "24.05";
 }
