@@ -1,5 +1,5 @@
 {
-  description = "NixOS Server Configuration with Custom Installer ISO";
+  description = "NixOS configurations — laptop + VM targets";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
@@ -11,16 +11,36 @@
       pkgs = import nixpkgs { inherit system; };
     in
     {
-      # Standard NixOS configuration
-      nixosConfigurations.nixos-vm = nixpkgs.lib.nixosSystem {
+      # ---------------------------------------------------------------
+      # Physical laptop (Intel Iris Xe, boots from USB-connected SSD)
+      # Build & install:
+      #   nix build .#nixosConfigurations.nixos-laptop.config.system.build.toplevel
+      # ---------------------------------------------------------------
+      nixosConfigurations.nixos-laptop = nixpkgs.lib.nixosSystem {
         inherit system;
         modules = [
-          ./configuration.nix
-          ./hardware-configuration.nix
+          ./configuration.nix      # General config (services, users, packages…)
+          ./machines/laptop.nix    # Laptop-specific (GPU, hostname, bootloader…)
         ];
       };
 
-      # Custom installer ISO configuration
+      # ---------------------------------------------------------------
+      # VirtualBox VM (software rendering, BIOS boot)
+      # Switch bootloader to bootloader-efi.nix inside machines/vm.nix
+      # if you need a UEFI VM.
+      # ---------------------------------------------------------------
+      nixosConfigurations.nixos-vm = nixpkgs.lib.nixosSystem {
+        inherit system;
+        modules = [
+          ./configuration.nix      # General config
+          ./machines/vm.nix        # VM-specific (WLR vars, VBox guest, bootloader…)
+        ];
+      };
+
+      # ---------------------------------------------------------------
+      # Custom installer ISO (used to flash the SSD)
+      # Build: nix build .#packages.x86_64-linux.iso
+      # ---------------------------------------------------------------
       nixosConfigurations.installer = nixpkgs.lib.nixosSystem {
         inherit system;
         modules = [
@@ -32,8 +52,6 @@
         };
       };
 
-      # Convenience output for building the ISO
       packages.${system}.iso = self.nixosConfigurations.installer.config.system.build.isoImage;
     };
 }
-

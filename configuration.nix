@@ -1,4 +1,7 @@
-# /etc/nixos/configuration.nix
+# configuration.nix — General NixOS configuration
+#
+# Machine-specific settings (hostname, GPU drivers, bootloader, kernel modules)
+# live in machines/laptop.nix or machines/vm.nix and are composed in flake.nix.
 
 { config, pkgs, ... }:
 
@@ -6,13 +9,12 @@
   imports = [
     ./hardware-configuration.nix
     ./firewall.nix
-    # Choose your bootloader (comment/uncomment one):
-    # ./bootloader-bios.nix   # For Legacy BIOS systems
-    ./bootloader-efi.nix      # For modern UEFI systems (laptops, desktops)
+    # No bootloader here — each machine file picks its own.
+    # No machine.nix here — flake.nix adds the right one per target.
   ];
 
-  # Filesystem configuration
-  # Using filesystem labels (more reliable than device paths)
+  # --- FILESYSTEM ---
+  # Label-based paths work on any machine we install to.
   fileSystems."/" = {
     device = "/dev/disk/by-label/NIXROOT";
     fsType = "ext4";
@@ -23,25 +25,20 @@
     fsType = "vfat";
   };
 
-  # 1. --- KERNEL MODULES & BOOT ---
-  # i915 is autoloaded by the kernel for Intel iGPU — no manual override needed
-  boot.initrd.kernelModules = [ "i915" ]; # Load Intel GPU driver early (better boot splash)
-
-  # 2. --- NETWORKING ---
-  networking.hostName = "nixos-laptop";
+  # --- NETWORKING ---
+  # hostname is set per-machine in machines/*.nix
   networking.networkmanager.enable = true;
   networking.firewall.enable = true;
   networking.firewall.allowedTCPPorts = [ 22 ];
 
-  # Enable SSH server
   services.openssh.enable = true;
   services.openssh.settings.PermitRootLogin = "no";
 
-  # 3. --- LOCALISATION ---
+  # --- LOCALISATION ---
   time.timeZone = "Europe/Kyiv";
   i18n.defaultLocale = "en_US.UTF-8";
 
-  # 4. --- USER ACCOUNTS ---
+  # --- USER ACCOUNTS ---
   users.users.alice = {
     isNormalUser = true;
     extraGroups = [ "wheel" "docker" "video" "input" ];
@@ -51,10 +48,10 @@
 
   users.mutableUsers = true;
 
-  # 5. --- SOFTWARE & SYSTEM CONFIGURATION ---
-
+  # --- NIX ---
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
+  # --- PACKAGES ---
   environment.systemPackages = with pkgs; [
     alacritty
     vim
@@ -65,9 +62,20 @@
     greetd.gtkgreet
     greetd.tuigreet
     kitty
-    # Intel GPU tools (useful for checking GPU status)
-    intel-gpu-tools
+    chromium          # Web browser
+    vesktop           # Discord client (Vencord-patched)
+    wofi              # App launcher (Super+Space in Hyprland)
+    # Machine-specific packages (GPU tools, drivers) are in machines/*.nix
   ];
+
+  # --- DOTFILES ---
+  # Symlink managed dotfiles into alice's home on every nixos-rebuild switch.
+  # Edit dotfiles/hyprland.conf in the repo; the symlink updates automatically.
+  system.activationScripts.dotfiles = ''
+    mkdir -p /home/alice/.config/hypr
+    ln -sf ${./dotfiles/hyprland.conf} /home/alice/.config/hypr/hyprland.conf
+    chown -h alice:users /home/alice/.config/hypr
+  '';
 
   environment.etc."greetd/environments" = {
     text = ''
@@ -77,10 +85,9 @@
 
   security.polkit.enable = true;
 
-  # Enable Docker daemon for containerization.
+  # --- SERVICES ---
   virtualisation.docker.enable = true;
 
-  # Enable sound with Pipewire (the modern standard).
   services.pipewire = {
     enable = true;
     pulse.enable = true;
@@ -96,7 +103,7 @@
     };
   };
 
-  # Enable Hyprland (Wayland compositor).
+  # --- DESKTOP ---
   programs.hyprland.enable = true;
   programs.hyprland.xwayland.enable = true;
   programs.fish.enable = true;
@@ -111,29 +118,5 @@
 
   nixpkgs.config.allowUnfree = true;
 
-  # 6. --- GRAPHICS (Intel Iris Xe / Iris Plus) ---
-  # The i915 open-source driver handles all Intel integrated graphics.
-  # No proprietary drivers needed.
-  hardware.opengl = {
-    enable = true;
-    driSupport = true;
-    driSupport32Bit = true;
-    extraPackages = with pkgs; [
-      intel-media-driver   # iHD driver — VA-API hardware video decode (8th gen+)
-      vulkan-intel         # Intel Vulkan support
-      libvdpau-va-gl       # VDPAU via VA-API (for apps that use VDPAU)
-    ];
-  };
-
-  # No VM-specific environment variables needed on real hardware.
-  # Hyprland works natively with Intel iGPU on Wayland.
-  environment.sessionVariables = {
-    # Tell apps to use VA-API for hardware video decoding
-    LIBVA_DRIVER_NAME = "iHD";
-  };
-
-  # This value determines the NixOS release from which the default
-  # settings for stateful data, like file locations and database versions
-  # are taken.
   system.stateVersion = "24.05";
 }
